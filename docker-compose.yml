@@ -1,0 +1,60 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-kinnav}
+      POSTGRES_USER: ${POSTGRES_USER:-kinnav}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-this-local-password}
+    ports: ["5432:5432"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/postgres/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kinnav} -d ${POSTGRES_DB:-kinnav}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  mongodb:
+    image: mongo:7
+    ports: ["27017:27017"]
+    volumes: [mongodb_data:/data/db]
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+  auth-service:
+    build: ./backend/services/auth-service
+    environment:
+      PORT: 3000
+      NODE_ENV: ${NODE_ENV:-development}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1d}
+    ports: ["3001:3000"]
+  routing-service:
+    build: ./backend/services/routing-service
+    environment:
+      PORT: 8081
+      GRAPH_PATH: ${ROUTING_GRAPH_PATH-}
+    volumes:
+      - ./backend/services/routing-service/data:/data:ro
+    ports: ["8081:8081"]
+  traffic-service:
+    build: ./backend/services/traffic-service
+    environment:
+      PORT: 8000
+    ports: ["8000:8000"]
+  user-service:
+    build: ./backend/services/user-service
+    environment:
+      PORT: 3002
+      NODE_ENV: ${NODE_ENV:-development}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+    ports: ["3002:3002"]
+  gateway:
+    image: nginx:1.27-alpine
+    depends_on: [auth-service, routing-service, traffic-service, user-service]
+    ports: ["8080:80"]
+    volumes:
+      - ./backend/gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+volumes:
+  postgres_data:
+  mongodb_data:
